@@ -1,15 +1,15 @@
-#define OP_SIZE 100
+
 #define MODULE_SIZE 10
 
 struct my_data {
     char module[MODULE_SIZE];
-	int state; // 1:on, 0:off
+    int state; // 1:on, 0:off
 };
 
+
 enum mymodule_states {
-	MYMODULE_STATE_NONE,
-    MYMODULE_STATE_ON,
     MYMODULE_STATE_OFF,
+    MYMODULE_STATE_ON,
     MYMODULE_STATE_MAX,
 };
 

@@ -1,6 +1,5 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
-#include <linux/cdev.h>
 #include <linux/fs.h>
 #include <linux/slab.h>
 #include <linux/device.h>
@@ -10,14 +9,14 @@
 
 #include "mymodule.h"
 
-
-struct mymodule_dev *mymodule_dev_ptr;
 dev_t mymodule_devno;
+struct mymodule_dev *mymodule_dev_ptr;
 
 static struct class *my_class;
 static struct device *my_device;
 
-int mymodule_open(struct inode *inode, struct file *filp){
+int mymodule_open(struct inode *inode, struct file *filp)
+{
     printk(KERN_INFO "[mymodule] mymodule_open\n");
     return 0;
 }
@@ -33,10 +32,11 @@ ssize_t mymodule_read(struct file *file, char __user *buf, size_t size, loff_t *
     printk("[mymodule] mymodule_read(%zu)\n", size);
 
 	strlcpy(kdata.module, mymodule_dev_ptr->cur_module, sizeof(kdata.module));
-	kdata.state = mymodule_dev_ptr->cur_state;
+
+	kdata.state = get_mymodule_gpios(mymodule_dev_ptr);
 
 	printk("[mymodule] module: %s, state: %d\n", kdata.module, kdata.state);
-	
+
     if(copy_to_user(buf, &kdata, sizeof(kdata))){
 		printk("[mymodule] copy_to_user fail!\n");
 	} else {
@@ -78,18 +78,28 @@ static long mymodule_ioctl(struct file *file, unsigned int cmd, unsigned long ar
 	case MYMODULE_CMD_RESET:
 		printk("[mymodule] do MYMODULE_CMD_RESET");
 		
-		mymodule_dev_ptr->cur_state = MYMODULE_STATE_NONE;
+		mymodule_dev_ptr->cur_state = MYMODULE_STATE_OFF;
 		strlcpy(mymodule_dev_ptr->cur_module, "none", sizeof(mymodule_dev_ptr->cur_module));
 		break;
 		
 	case MYMODULE_CMD_SET_STATE:
-		printk("[mymodule] do MYMODULE_CMD_ACTION");
-			
+		printk("[mymodule] do MYMODULE_CMD_SET_STATE");
+
 		if(copy_from_user(&state, (int*)arg, sizeof(state))){
 			printk("[mymodule] copy_from_user fail!\n");
 		} else {
-			mymodule_dev_ptr->cur_state = state;
-			printk("[mymodule] update module state: %d\n", mymodule_dev_ptr->cur_state);
+			printk("[mymodule] set module state: %d\n", state);
+
+			if (state == MYMODULE_STATE_ON) {
+
+				request_mymodule_gpios(mymodule_dev_ptr);
+				set_mymodule_gpios(mymodule_dev_ptr, state);
+
+			} else if (state == MYMODULE_STATE_OFF){
+
+				set_mymodule_gpios(mymodule_dev_ptr, state);
+				free_mymodule_gpios(mymodule_dev_ptr);
+			}
 		}
 		break;
 	default:
@@ -139,9 +149,9 @@ static int mymodule_init(void)
         ret = -ENOMEM;
         goto free_devno;
     }
-    
+
     mymodule_cdev_setup();
-    
+
     my_class = class_create(THIS_MODULE, CLASS_NAME);
     if(IS_ERR(my_class)){
         printk(KERN_INFO "[mymodule] class_create fail!\n");
@@ -151,7 +161,9 @@ static int mymodule_init(void)
     my_device = device_create(my_class, NULL, mymodule_devno, NULL, "mydevice");
 
 	strlcpy(mymodule_dev_ptr->cur_module, "none", sizeof(mymodule_dev_ptr->cur_module));
-	mymodule_dev_ptr->cur_state = MYMODULE_STATE_NONE;
+	mymodule_dev_ptr->cur_state = MYMODULE_STATE_OFF;
+
+	mymodule_gpio_init(mymodule_dev_ptr);
 	
     return 0;
 
@@ -162,6 +174,7 @@ free_devno:
 static void mymodule_exit(void)
 {
     printk(KERN_INFO "[mymodule] X\n");
+
     device_destroy(my_class, mymodule_devno);
     class_destroy(my_class); 
     cdev_del(&mymodule_dev_ptr->my_cdev);

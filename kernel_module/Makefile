@@ -1,1 +1,1 @@
-obj-y += mymodule.o
+obj-y += mymodule.o mymodule_gpio.o
